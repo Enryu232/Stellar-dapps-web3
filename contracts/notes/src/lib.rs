@@ -1,84 +1,78 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Env, String, Symbol, Vec};
 
-// Struktur data yang akan menyimpan informasi tagihan (Split Bill)
+// Struktur data untuk menyimpan informasi peminjaman ruangan
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct Bill {
+pub struct Booking {
     pub id: u64,
-    pub description: String,
-    pub total_amount: u64,
-    pub participants_count: u32,
-    pub amount_per_person: u64,
+    pub room_name: String,
+    pub booker_name: String,
+    pub time_slot: String, // Contoh: "Senin, 08:00-10:00"
 }
 
-// Storage key untuk data bill (maksimal 9 karakter untuk symbol_short)
-const BILL_DATA: Symbol = symbol_short!("BILLS");
+// Storage key untuk data peminjaman (maksimal 9 karakter)
+const BOOKING_DATA: Symbol = symbol_short!("BOOKINGS");
 
 #[contract]
-pub struct SplitBillContract;
+pub struct RoomBookingContract;
 
 #[contractimpl]
-impl SplitBillContract {
-    // Fungsi untuk melihat semua tagihan
-    pub fn get_bills(env: Env) -> Vec<Bill> {
-        // 1. Ambil data bills dari storage
-        return env.storage().instance().get(&BILL_DATA).unwrap_or(Vec::new(&env));
+impl RoomBookingContract {
+    // Fungsi untuk melihat semua jadwal peminjaman ruangan
+    pub fn get_bookings(env: Env) -> Vec<Booking> {
+        return env.storage().instance().get(&BOOKING_DATA).unwrap_or(Vec::new(&env));
     }
 
-    // Fungsi untuk membuat tagihan baru
-    pub fn create_bill(
+    // Fungsi untuk meminjam ruangan baru
+    pub fn create_booking(
         env: Env, 
-        description: String, 
-        total_amount: u64, 
-        participants_count: u32
+        room_name: String, 
+        booker_name: String, 
+        time_slot: String
     ) -> String {
-        // Validasi agar jumlah orang tidak 0 (mencegah error pembagian)
-        if participants_count == 0 {
-            return String::from_str(&env, "Jumlah orang tidak boleh 0");
-        }
-
-        // 1. Ambil data bills dari storage
-        let mut bills: Vec<Bill> = env.storage().instance().get(&BILL_DATA).unwrap_or(Vec::new(&env));
+        let mut bookings: Vec<Booking> = env.storage().instance().get(&BOOKING_DATA).unwrap_or(Vec::new(&env));
         
-        // 2. Hitung jumlah yang harus dibayar per orang
-        let split_amount = total_amount / (participants_count as u64);
-
-        // 3. Buat object bill baru
-        let new_bill = Bill {
-            id: env.prng().gen::<u64>(),
-            description,
-            total_amount,
-            participants_count,
-            amount_per_person: split_amount,
-        };
-        
-        // 4. Tambahkan bill baru ke daftar bills
-        bills.push_back(new_bill);
-        
-        // 5. Simpan kembali ke storage
-        env.storage().instance().set(&BILL_DATA, &bills);
-        
-        return String::from_str(&env, "Tagihan berhasil ditambahkan");
-    }
-
-    // Fungsi untuk menghapus tagihan berdasarkan id
-    pub fn delete_bill(env: Env, id: u64) -> String {
-        // 1. Ambil data bills dari storage 
-        let mut bills: Vec<Bill> = env.storage().instance().get(&BILL_DATA).unwrap_or(Vec::new(&env));
-
-        // 2. Cari index bill yang akan dihapus
-        for i in 0..bills.len() {
-            if bills.get(i).unwrap().id == id {
-                bills.remove(i);
-
-                // 3. Simpan perubahan ke storage
-                env.storage().instance().set(&BILL_DATA, &bills);
-                return String::from_str(&env, "Berhasil menghapus tagihan");
+        // Validasi: Cek apakah ruangan sudah dipesan di waktu yang sama
+        for i in 0..bookings.len() {
+            let existing_booking = bookings.get(i).unwrap();
+            
+            // Jika nama ruangan dan waktu sama, tolak peminjaman
+            if existing_booking.room_name == room_name && existing_booking.time_slot == time_slot {
+                return String::from_str(&env, "Gagal: Ruangan sudah dipesan pada waktu tersebut");
             }
         }
 
-        return String::from_str(&env, "Tagihan tidak ditemukan");
+        // Jika kosong, buat object booking baru
+        let new_booking = Booking {
+            id: env.prng().gen::<u64>(),
+            room_name,
+            booker_name,
+            time_slot,
+        };
+        
+        // Tambahkan jadwal baru ke daftar
+        bookings.push_back(new_booking);
+        
+        // Simpan ke storage
+        env.storage().instance().set(&BOOKING_DATA, &bookings);
+        
+        return String::from_str(&env, "Berhasil meminjam ruangan");
+    }
+
+    // Fungsi untuk membatalkan (menghapus) peminjaman berdasarkan ID
+    pub fn cancel_booking(env: Env, id: u64) -> String {
+        let mut bookings: Vec<Booking> = env.storage().instance().get(&BOOKING_DATA).unwrap_or(Vec::new(&env));
+
+        for i in 0..bookings.len() {
+            if bookings.get(i).unwrap().id == id {
+                bookings.remove(i);
+                env.storage().instance().set(&BOOKING_DATA, &bookings);
+                return String::from_str(&env, "Berhasil membatalkan pesanan ruangan");
+            }
+        }
+
+        return String::from_str(&env, "Pesanan tidak ditemukan");
     }
 }
 
